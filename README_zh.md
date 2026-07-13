@@ -639,4 +639,4 @@ ONNX 模型源自 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)（Apach
 
 如果这个项目对你有帮助，欢迎打赏支持作者。
 
-![Sponsor](images/sponsor.jpg)
+<img src="images/sponsor.jpg" alt="Sponsor" width="360">

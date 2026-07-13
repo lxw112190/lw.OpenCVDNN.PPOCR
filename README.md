@@ -650,4 +650,4 @@ The ONNX models are derived from [PaddleOCR](https://github.com/PaddlePaddle/Pad
 
 If this project helps you, you can support its continued maintenance.
 
-![Sponsor](images/sponsor.jpg)
+<img src="images/sponsor.jpg" alt="Sponsor" width="360">
