@@ -1,0 +1,51 @@
+# Visual Studio user files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build outputs
+bin/
+obj/
+out/
+build/
+install/
+reports/
+*.pdb
+*.exp
+*.iobj
+*.ipdb
+*.recipe
+*.log
+
+# NuGet
+packages/
+*.nupkg
+
+# Distribution archives
+*.rar
+*.zip
+*.7z
+
+# Log files
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude internal
+.agents/
+
+# Release packages — distributed via GitHub Releases, not in the repo
+release/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
