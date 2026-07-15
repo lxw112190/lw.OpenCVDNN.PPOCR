@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0.0
+
+### Added
+
+- Recognition-only engine initialization without a detection/classification model.
+- Single-image and batch recognition C APIs for pre-cropped text lines.
+- Rectangle/quadrilateral ROI recognition C APIs with 0/90/180/270-degree rotation.
+- HTTP `/api/recognize` and `/api/recognize-rois` endpoints.
+- HTTP `--mode ocr|rec|both` deployment option.
+- .NET Framework 3.5 wrappers for text-line and ROI recognition.
+- .NET Framework 3.5 WinForms mouse-drag ROI selection and recognition.
+
+### Changed
+
+- Recognition now enforces `rec_batch_num` to bound batch memory, including x86 builds.
+- Native version updated to `1.1.0.0`; existing OCR exports remain compatible.
+
 All notable changes to this project will be documented in this file.
 
 ## [1.0.0.1] — 2026-07

@@ -39,6 +39,9 @@ namespace LwOpenCVDnnPPOCRWin7Test
         private System.Windows.Forms.Button btnDestroy;
         private System.Windows.Forms.Button btnSelect;
         private System.Windows.Forms.Button btnRecognize;
+        private System.Windows.Forms.Button btnRecognizeRegion;
+        private System.Windows.Forms.Button btnClearRegion;
+        private System.Windows.Forms.Label lblRegionHint;
         private System.Windows.Forms.CheckBox chkFullJson;
 
         private System.Windows.Forms.PictureBox picture;
@@ -93,6 +96,9 @@ namespace LwOpenCVDnnPPOCRWin7Test
             this.btnDestroy = new System.Windows.Forms.Button();
             this.btnSelect = new System.Windows.Forms.Button();
             this.btnRecognize = new System.Windows.Forms.Button();
+            this.btnRecognizeRegion = new System.Windows.Forms.Button();
+            this.btnClearRegion = new System.Windows.Forms.Button();
+            this.lblRegionHint = new System.Windows.Forms.Label();
             this.chkFullJson = new System.Windows.Forms.CheckBox();
             this.picture = new System.Windows.Forms.PictureBox();
             this.output = new System.Windows.Forms.RichTextBox();
@@ -395,6 +401,35 @@ namespace LwOpenCVDnnPPOCRWin7Test
             this.btnRecognize.Text = "识别/测速";
             this.btnRecognize.UseVisualStyleBackColor = true;
             this.btnRecognize.Click += new System.EventHandler(this.btnRecognize_Click);
+            //
+            // btnRecognizeRegion
+            //
+            this.btnRecognizeRegion.Location = new System.Drawing.Point(832, 142);
+            this.btnRecognizeRegion.Name = "btnRecognizeRegion";
+            this.btnRecognizeRegion.Size = new System.Drawing.Size(126, 25);
+            this.btnRecognizeRegion.TabIndex = 7;
+            this.btnRecognizeRegion.Text = "识别框选区域";
+            this.btnRecognizeRegion.UseVisualStyleBackColor = true;
+            this.btnRecognizeRegion.Click += new System.EventHandler(this.btnRecognizeRegion_Click);
+            //
+            // btnClearRegion
+            //
+            this.btnClearRegion.Location = new System.Drawing.Point(968, 142);
+            this.btnClearRegion.Name = "btnClearRegion";
+            this.btnClearRegion.Size = new System.Drawing.Size(126, 25);
+            this.btnClearRegion.TabIndex = 8;
+            this.btnClearRegion.Text = "清除框选";
+            this.btnClearRegion.UseVisualStyleBackColor = true;
+            this.btnClearRegion.Click += new System.EventHandler(this.btnClearRegion_Click);
+            //
+            // lblRegionHint
+            //
+            this.lblRegionHint.AutoSize = true;
+            this.lblRegionHint.Location = new System.Drawing.Point(12, 149);
+            this.lblRegionHint.Name = "lblRegionHint";
+            this.lblRegionHint.Size = new System.Drawing.Size(335, 12);
+            this.lblRegionHint.TabIndex = 9;
+            this.lblRegionHint.Text = "鼠标左键拖动框选单行文字区域；右键或“清除框选”取消";
             // 
             // chkFullJson
             // 
@@ -411,12 +446,17 @@ namespace LwOpenCVDnnPPOCRWin7Test
             this.picture.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Left)));
             this.picture.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.picture.Cursor = System.Windows.Forms.Cursors.Cross;
             this.picture.Location = new System.Drawing.Point(12, 173);
             this.picture.Name = "picture";
             this.picture.Size = new System.Drawing.Size(520, 606);
             this.picture.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
             this.picture.TabIndex = 8;
             this.picture.TabStop = false;
+            this.picture.Paint += new System.Windows.Forms.PaintEventHandler(this.picture_Paint);
+            this.picture.MouseDown += new System.Windows.Forms.MouseEventHandler(this.picture_MouseDown);
+            this.picture.MouseMove += new System.Windows.Forms.MouseEventHandler(this.picture_MouseMove);
+            this.picture.MouseUp += new System.Windows.Forms.MouseEventHandler(this.picture_MouseUp);
             // 
             // output
             // 
@@ -444,7 +484,7 @@ namespace LwOpenCVDnnPPOCRWin7Test
             // 
             this.statusLabel.Name = "statusLabel";
             this.statusLabel.Size = new System.Drawing.Size(347, 17);
-            this.statusLabel.Text = "未初始化 | 版本 1.0.0.1 | 作者: 天天代码码天天,QQ:819069052";
+            this.statusLabel.Text = "未初始化 | 版本 1.1.0.0 | 作者: 天天代码码天天,QQ:819069052";
             // 
             // MainForm
             // 
@@ -458,6 +498,9 @@ namespace LwOpenCVDnnPPOCRWin7Test
             this.Controls.Add(this.btnDestroy);
             this.Controls.Add(this.btnSelect);
             this.Controls.Add(this.btnRecognize);
+            this.Controls.Add(this.btnRecognizeRegion);
+            this.Controls.Add(this.btnClearRegion);
+            this.Controls.Add(this.lblRegionHint);
             this.Controls.Add(this.chkFullJson);
             this.Controls.Add(this.picture);
             this.Controls.Add(this.output);
@@ -465,7 +508,7 @@ namespace LwOpenCVDnnPPOCRWin7Test
             this.MinimumSize = new System.Drawing.Size(1126, 850);
             this.Name = "MainForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "lw.OpenCVDNN.PPOCR Win7 Test - 1.0.0.1 （天天代码码天天，QQ：819069052）";
+            this.Text = "lw.OpenCVDNN.PPOCR Win7 Test - 1.1.0.0 （天天代码码天天，QQ：819069052）";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.MainForm_FormClosing);
             this.Load += new System.EventHandler(this.MainForm_Load);
             this.models.ResumeLayout(false);

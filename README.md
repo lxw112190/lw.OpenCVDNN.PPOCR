@@ -1,7 +1,7 @@
 # lw.OpenCVDNN.PPOCR
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0.1-green.svg)](https://github.com/lxw112190/lw.OpenCVDNN.PPOCR/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0.0-green.svg)](https://github.com/lxw112190/lw.OpenCVDNN.PPOCR/releases)
 
 **14 MB pure-CPU PP-OCR DLL. .NET Framework 3.5-ready. No runtime installation. Runs on Windows 7.**
 
@@ -114,6 +114,13 @@ HTTP OCR web UI running on Windows 7 SP1:
 
 ![WinForms OCR test application running on Windows 7 SP1](images/screenshot-winforms-win7.png)
 
+The WinForms sample supports mouse-drag ROI recognition: hold the left mouse button
+over the image, select one text line, and click **Recognize selected region**. Right-click
+or click **Clear selection** to cancel. Coordinates are mapped from the effective
+`PictureBox.Zoom` display rectangle back to source-image pixels. The ROI recognition
+API skips text detection and orientation classification, so the selected region should
+contain one correctly oriented text line.
+
 ## How We Made Win7 Work
 
 "Supporting Windows 7" is not just changing a build flag. If any layer pulls in a higher-version dependency, the binary fails silently or crashes on the target machine.
@@ -211,6 +218,52 @@ Content-Type: application/json
 
 {"imageBase64": "data:image/jpeg;base64,..."}
 ```
+
+The server also exposes recognition paths that do not run text detection or
+angle classification:
+
+- `POST /api/recognize` accepts one already-cropped text-line image.
+- `POST /api/recognize-rois` accepts one source image plus fixed ROIs, decodes
+  the image once, perspective-crops all regions, and recognizes them as a batch.
+
+Rectangle ROI request:
+
+```json
+{
+  "imageBase64": "...",
+  "rois": [
+    {"id": 101, "x": 120, "y": 80, "width": 160, "height": 45, "rotation": 0}
+  ]
+}
+```
+
+Quadrilateral ROI request (top-left, top-right, bottom-right, bottom-left):
+
+```json
+{
+  "imageBase64": "...",
+  "rois": [
+    {
+      "id": 201,
+      "rotation": 0,
+      "points": [
+        {"x": 100, "y": 80}, {"x": 310, "y": 65},
+        {"x": 315, "y": 115}, {"x": 105, "y": 130}
+      ]
+    }
+  ]
+}
+```
+
+`rotation` is clockwise and accepts `0`, `90`, `180`, or `270`. Coordinates
+refer to decoded source-image pixels. Results preserve input order and echo the
+ROI `id` and coordinates. Each ROI must contain one text line; use `/api/ocr`
+for an unsegmented multi-line document.
+
+The matching native C ABI exports are `ppocr_recognize_encoded`,
+`ppocr_recognize_bgr`, `ppocr_recognize_encoded_batch`,
+`ppocr_recognize_rois_encoded`, and `ppocr_recognize_rois_bgr`. Set
+`det_model_path` to `nullptr` when creating a recognition-only handle.
 
 ### curl
 
@@ -471,6 +524,7 @@ lw.OpenCVDNN.PPOCR/
 | --- | --- | --- |
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `8080` | Listen port |
+| `--mode` | `both` | `ocr`, `rec`, or `both`; `rec` skips detector/classifier loading |
 | `--det_model` | `inference/PP-OCRv6_tiny_det.onnx` | Detection model |
 | `--rec_model` | `inference/PP-OCRv6_tiny_rec.onnx` | Recognition model |
 | `--rec_dict` | `inference/PP-OCRv6_tiny_rec_dict.txt` | Recognition dictionary |

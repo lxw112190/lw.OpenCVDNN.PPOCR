@@ -19,6 +19,11 @@ namespace LwOpenCVDnnPPOCRWin7Test
         private Bitmap originalImage;
         private Bitmap displayImage;
 
+        private bool selectingRegion;
+        private Point selectionStart;
+        private Rectangle selectionDragRectangle;
+        private Rectangle? selectedImageRegion;
+
         private string summaryText = string.Empty;
         private string fullText = string.Empty;
 
@@ -44,7 +49,7 @@ namespace LwOpenCVDnnPPOCRWin7Test
                 LoadImage(defaultImage);
             }
 
-            AppendLine("lw.OpenCVDNN.PPOCR Win7 Test 1.0.0.1");
+            AppendLine("lw.OpenCVDNN.PPOCR Win7 Test 1.1.0.0");
             AppendLine("作者: 天天代码码天天,QQ:819069052");
             AppendLine("进程架构: " + (IntPtr.Size == 4 ? "x86（低内存模式）" : "x64"));
             AppendLine("OpenCV 5 DNN仅使用CPU，请选择模型后点击初始化。");
@@ -350,6 +355,233 @@ namespace LwOpenCVDnnPPOCRWin7Test
             }
         }
 
+        private void btnRecognizeRegion_Click(object sender, EventArgs e)
+        {
+            if (engine == null)
+            {
+                MessageBox.Show(this, "请先初始化模型。", "提示",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath) || originalImage == null)
+            {
+                MessageBox.Show(this, "请先选择图片。", "提示",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!selectedImageRegion.HasValue)
+            {
+                MessageBox.Show(this, "请在左侧图片上按住鼠标左键拖动，框选一个文字区域。",
+                    "尚未框选", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            SetBusy(true);
+            try
+            {
+                Rectangle region = selectedImageRegion.Value;
+                PPOCRRoi roi = PPOCRRoi.Rectangle(1, region.X, region.Y,
+                    region.Width, region.Height, 0);
+                byte[] bytes = File.ReadAllBytes(imagePath);
+
+                Stopwatch watch = Stopwatch.StartNew();
+                string json = engine.RecognizeRegions(bytes, new PPOCRRoi[] { roi });
+                watch.Stop();
+
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                serializer.MaxJsonLength = int.MaxValue;
+                OcrResponse response = serializer.Deserialize<OcrResponse>(json);
+                if (response == null || response.results == null || response.results.Count == 0)
+                    throw new InvalidOperationException("ROI识别返回结果为空。");
+
+                OcrItem item = response.results[0];
+                if (item.code != 0)
+                    throw new InvalidOperationException("ROI识别失败(" + item.code + "): " + item.msg);
+
+                DrawResults(response.results);
+
+                StringBuilder summary = new StringBuilder();
+                summary.AppendLine("框选区域识别（不执行检测和方向分类）");
+                summary.AppendLine("图片: " + imagePath);
+                summary.AppendLine("原图ROI: x=" + region.X + ", y=" + region.Y +
+                    ", width=" + region.Width + ", height=" + region.Height);
+                summary.AppendLine("调用耗时: " + watch.Elapsed.TotalMilliseconds.ToString("F1") + " ms");
+                summary.AppendLine("DLL内部识别: " + response.elapsed_ms.ToString("F1") + " ms");
+                summary.AppendLine(new string('-', 70));
+                summary.AppendLine(item.text + "  [" + item.score.ToString("F3") + "]");
+
+                summaryText = summary.ToString();
+                fullText = summaryText + Environment.NewLine + new string('=', 70) +
+                    Environment.NewLine + "完整JSON" + Environment.NewLine +
+                    new string('=', 70) + Environment.NewLine + json;
+                output.Text = chkFullJson.Checked ? fullText : summaryText;
+                statusLabel.Text = "框选区域识别成功 | " + item.text + " | " +
+                    watch.Elapsed.TotalMilliseconds.ToString("F1") + " ms";
+            }
+            catch (Exception ex)
+            {
+                output.Text = ex.ToString();
+                statusLabel.Text = "框选区域识别失败: " + ex.Message;
+                MessageBox.Show(this, ex.Message, "框选区域识别失败",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+        }
+
+        private void btnClearRegion_Click(object sender, EventArgs e)
+        {
+            ClearSelectedRegion();
+        }
+
+        private void picture_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                ClearSelectedRegion();
+                return;
+            }
+            if (e.Button != MouseButtons.Left || originalImage == null) return;
+
+            Rectangle imageBounds = GetImageDisplayRectangle();
+            if (!imageBounds.Contains(e.Location)) return;
+
+            selectingRegion = true;
+            selectionStart = e.Location;
+            selectionDragRectangle = new Rectangle(e.X, e.Y, 0, 0);
+            picture.Capture = true;
+            picture.Invalidate();
+        }
+
+        private void picture_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (!selectingRegion) return;
+            Rectangle imageBounds = GetImageDisplayRectangle();
+            Point current = ClampToRectangle(e.Location, imageBounds);
+            selectionDragRectangle = NormalizeRectangle(selectionStart, current);
+            picture.Invalidate();
+        }
+
+        private void picture_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (!selectingRegion || e.Button != MouseButtons.Left) return;
+            selectingRegion = false;
+            picture.Capture = false;
+
+            Rectangle imageBounds = GetImageDisplayRectangle();
+            Point current = ClampToRectangle(e.Location, imageBounds);
+            selectionDragRectangle = NormalizeRectangle(selectionStart, current);
+            selectedImageRegion = ControlToImageRectangle(selectionDragRectangle, imageBounds);
+            selectionDragRectangle = Rectangle.Empty;
+
+            if (selectedImageRegion.HasValue)
+            {
+                Rectangle region = selectedImageRegion.Value;
+                statusLabel.Text = "已框选原图区域: x=" + region.X + ", y=" + region.Y +
+                    ", width=" + region.Width + ", height=" + region.Height;
+            }
+            else
+            {
+                statusLabel.Text = "框选区域过小，请重新拖动选择。";
+            }
+            picture.Invalidate();
+        }
+
+        private void picture_Paint(object sender, PaintEventArgs e)
+        {
+            Rectangle rectangle = Rectangle.Empty;
+            if (selectingRegion)
+                rectangle = selectionDragRectangle;
+            else if (selectedImageRegion.HasValue)
+                rectangle = ImageToControlRectangle(selectedImageRegion.Value, GetImageDisplayRectangle());
+
+            if (rectangle.Width < 1 || rectangle.Height < 1) return;
+            rectangle.Width -= 1;
+            rectangle.Height -= 1;
+            using (Pen shadow = new Pen(Color.Black, 3F))
+            using (Pen selection = new Pen(Color.Yellow, 2F))
+            {
+                selection.DashStyle = DashStyle.Dash;
+                e.Graphics.DrawRectangle(shadow, rectangle);
+                e.Graphics.DrawRectangle(selection, rectangle);
+            }
+        }
+
+        private Rectangle GetImageDisplayRectangle()
+        {
+            if (originalImage == null || picture.ClientSize.Width <= 0 || picture.ClientSize.Height <= 0)
+                return Rectangle.Empty;
+            double scale = Math.Min(
+                (double)picture.ClientSize.Width / originalImage.Width,
+                (double)picture.ClientSize.Height / originalImage.Height);
+            int width = Math.Max(1, (int)Math.Round(originalImage.Width * scale));
+            int height = Math.Max(1, (int)Math.Round(originalImage.Height * scale));
+            return new Rectangle(
+                (picture.ClientSize.Width - width) / 2,
+                (picture.ClientSize.Height - height) / 2,
+                width, height);
+        }
+
+        private Rectangle? ControlToImageRectangle(Rectangle control, Rectangle display)
+        {
+            if (originalImage == null || display.Width <= 0 || display.Height <= 0 ||
+                control.Width < 3 || control.Height < 3) return null;
+
+            int left = (int)Math.Floor((control.Left - display.Left) *
+                (double)originalImage.Width / display.Width);
+            int top = (int)Math.Floor((control.Top - display.Top) *
+                (double)originalImage.Height / display.Height);
+            int right = (int)Math.Ceiling((control.Right - display.Left) *
+                (double)originalImage.Width / display.Width);
+            int bottom = (int)Math.Ceiling((control.Bottom - display.Top) *
+                (double)originalImage.Height / display.Height);
+
+            left = Math.Max(0, Math.Min(originalImage.Width - 1, left));
+            top = Math.Max(0, Math.Min(originalImage.Height - 1, top));
+            right = Math.Max(left + 1, Math.Min(originalImage.Width, right));
+            bottom = Math.Max(top + 1, Math.Min(originalImage.Height, bottom));
+            return Rectangle.FromLTRB(left, top, right, bottom);
+        }
+
+        private Rectangle ImageToControlRectangle(Rectangle image, Rectangle display)
+        {
+            if (originalImage == null || display.Width <= 0 || display.Height <= 0)
+                return Rectangle.Empty;
+            int left = display.Left + (int)Math.Round(image.Left * (double)display.Width / originalImage.Width);
+            int top = display.Top + (int)Math.Round(image.Top * (double)display.Height / originalImage.Height);
+            int right = display.Left + (int)Math.Round(image.Right * (double)display.Width / originalImage.Width);
+            int bottom = display.Top + (int)Math.Round(image.Bottom * (double)display.Height / originalImage.Height);
+            return Rectangle.FromLTRB(left, top, right, bottom);
+        }
+
+        private static Rectangle NormalizeRectangle(Point first, Point second)
+        {
+            return Rectangle.FromLTRB(
+                Math.Min(first.X, second.X), Math.Min(first.Y, second.Y),
+                Math.Max(first.X, second.X), Math.Max(first.Y, second.Y));
+        }
+
+        private static Point ClampToRectangle(Point point, Rectangle rectangle)
+        {
+            return new Point(
+                Math.Max(rectangle.Left, Math.Min(rectangle.Right, point.X)),
+                Math.Max(rectangle.Top, Math.Min(rectangle.Bottom, point.Y)));
+        }
+
+        private void ClearSelectedRegion()
+        {
+            selectingRegion = false;
+            picture.Capture = false;
+            selectedImageRegion = null;
+            selectionDragRectangle = Rectangle.Empty;
+            picture.Invalidate();
+            if (originalImage != null) statusLabel.Text = "框选已清除，请拖动鼠标左键重新选择。";
+        }
+
         private void chkFullJson_CheckedChanged(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(summaryText))
@@ -400,11 +632,15 @@ namespace LwOpenCVDnnPPOCRWin7Test
             }
 
             picture.Image = displayImage;
+            picture.Invalidate();
         }
 
         private void LoadImage(string path)
         {
             picture.Image = null;
+            selectedImageRegion = null;
+            selectingRegion = false;
+            selectionDragRectangle = Rectangle.Empty;
 
             if (originalImage != null)
             {
@@ -558,6 +794,8 @@ namespace LwOpenCVDnnPPOCRWin7Test
             btnDestroy.Enabled = !busy;
             btnSelect.Enabled = !busy;
             btnRecognize.Enabled = !busy;
+            btnRecognizeRegion.Enabled = !busy;
+            btnClearRegion.Enabled = !busy;
 
             UseWaitCursor = busy;
         }

@@ -8,6 +8,5 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("天天代码码天天,QQ:819069052")]
 [assembly: ComVisible(false)]
 [assembly: Guid("F88BF412-825A-4D16-98E0-A2A9EF6836E6")]
-[assembly: AssemblyVersion("1.0.0.1")]
-[assembly: AssemblyFileVersion("1.0.0.1")]
-
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]

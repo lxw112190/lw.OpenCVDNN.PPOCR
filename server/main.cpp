@@ -1,3 +1,5 @@
+#define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
+
 #include <windows.h>
 #include <objbase.h>
 
@@ -41,6 +43,7 @@ constexpr const char* kAuthor = u8"天天代码码天天，QQ：819069052";
 struct AppConfig {
     std::string host = "0.0.0.0";
     int port = 8080;
+    std::string mode = "both";
     std::string det_model;
     std::string rec_model;
     std::string rec_dict;
@@ -371,6 +374,9 @@ AppConfig ParseConfig(int argc, char* argv[]) {
     cfg.exe_dir = GetExeDir();
     cfg.host = GetArgValue(argc, argv, "--host", cfg.host);
     cfg.port = ToInt(GetArgValue(argc, argv, "--port", std::to_string(cfg.port)), cfg.port);
+    cfg.mode = GetArgValue(argc, argv, "--mode", cfg.mode);
+    std::transform(cfg.mode.begin(), cfg.mode.end(), cfg.mode.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     cfg.det_model = GetArgValue(argc, argv, "--det_model", "inference/PP-OCRv6_tiny_det.onnx");
     cfg.rec_model = GetArgValue(argc, argv, "--rec_model", "inference/PP-OCRv6_tiny_rec.onnx");
@@ -424,9 +430,10 @@ void SetupLogger(const std::wstring& exe_dir) {
 
 void PrintStartupInfo(const AppConfig& cfg) {
     spdlog::info("=======================================");
-    spdlog::info("lw.OpenCVDNN.PPOCR.HttpServer 1.0.0.1");
+    spdlog::info("lw.OpenCVDNN.PPOCR.HttpServer 1.1.0.0");
     spdlog::info("Author: {}", kAuthor);
     spdlog::info("HTTP: http://{}:{}/", cfg.host, cfg.port);
+    spdlog::info("mode: {}", cfg.mode);
     spdlog::info("det_model: {}", cfg.det_model);
     spdlog::info("rec_model: {}", cfg.rec_model);
     spdlog::info("rec_dict: {}", cfg.rec_dict);
@@ -443,6 +450,9 @@ void PrintStartupInfo(const AppConfig& cfg) {
 }
 
 void InitOcr(const AppConfig& cfg) {
+    if (cfg.mode != "ocr" && cfg.mode != "rec" && cfg.mode != "both") {
+        throw std::runtime_error("--mode must be ocr, rec or both");
+    }
     const std::wstring det = Utf8ToWide(cfg.det_model);
     const std::wstring rec = Utf8ToWide(cfg.rec_model);
     const std::wstring dict = Utf8ToWide(cfg.rec_dict);
@@ -450,16 +460,16 @@ void InitOcr(const AppConfig& cfg) {
     wchar_t error[512] = {};
     ppocr_config_w native = {};
     ppocr_config_init(&native);
-    native.det_model_path = det.c_str();
+    native.det_model_path = cfg.mode == "rec" ? nullptr : det.c_str();
     native.rec_model_path = rec.c_str();
     native.rec_dict_path = dict.c_str();
-    native.cls_model_path = cls_model.c_str();
+    native.cls_model_path = cfg.mode == "rec" ? nullptr : cls_model.c_str();
     native.limit_side_len = cfg.limit_side_len;
     native.det_db_thresh = cfg.det_db_thresh;
     native.det_db_box_thresh = cfg.det_db_box_thresh;
     native.det_db_unclip_ratio = cfg.det_db_unclip_ratio;
     native.use_dilation = cfg.use_dilation ? 1 : 0;
-    native.use_angle_cls = cfg.use_angle_cls ? 1 : 0;
+    native.use_angle_cls = cfg.mode != "rec" && cfg.use_angle_cls ? 1 : 0;
     native.cls_thresh = cfg.cls_thresh;
     native.cls_batch_num = cfg.cls_batch_num;
     native.rec_batch_num = cfg.rec_batch_num;
@@ -538,10 +548,8 @@ std::string OcrJsonResponse(const httplib::Request& req) {
         512);
 
     std::string raw_result;
-    if (result != nullptr && result_len > 0) {
-        raw_result.assign(result, result + result_len);
-        ppocr_free(result);
-    }
+    if (result != nullptr && result_len > 0) raw_result.assign(result, result + result_len);
+    if (result != nullptr) ppocr_free(result);
 
     if (code != 0) throw std::runtime_error(WideToUtf8(error));
     json response = json::parse(raw_result);
@@ -550,6 +558,139 @@ std::string OcrJsonResponse(const httplib::Request& req) {
     spdlog::info("OCR request finished, elapsed_ms={}, boxes={}",
         response["elapsed_ms"].get<double>(), response["results"].size());
     return response.dump();
+}
+
+const json& RequireField(const json& value, const char* name) {
+    const auto it = value.find(name);
+    if (it == value.end()) throw std::runtime_error(std::string("missing field: ") + name);
+    return *it;
+}
+
+int OptionalInt(const json& value, const char* name, int fallback) {
+    const auto it = value.find(name);
+    return it == value.end() ? fallback : it->get<int>();
+}
+
+std::string DecodeBase64Image(std::string image_base64) {
+    StripBase64PrefixAndWhitespace(image_base64);
+    if (image_base64.empty()) throw std::runtime_error("imageBase64 is empty");
+    std::string bytes = base64_decode(image_base64, true);
+    if (bytes.empty()) throw std::runtime_error("decode base64 failed");
+    return bytes;
+}
+
+std::string FinishNativeResponse(int code, char* result, int result_len,
+    const wchar_t* error, const char* operation) {
+    std::string raw_result;
+    if (result != nullptr && result_len > 0) raw_result.assign(result, result + result_len);
+    if (result != nullptr) ppocr_free(result);
+    if (code != 0) throw std::runtime_error(WideToUtf8(error));
+    if (raw_result.empty()) throw std::runtime_error(std::string(operation) + " returned an empty result");
+    json response = json::parse(raw_result);
+    response["code"] = 0;
+    response["msg"] = "ok";
+    return response.dump();
+}
+
+std::string RecognizeJsonResponse(const httplib::Request& req) {
+    const std::string bytes = DecodeBase64Image(ExtractImageBase64(req));
+    wchar_t error[512] = {};
+    char* result = nullptr;
+    int result_len = 0;
+    const int code = ppocr_recognize_encoded(
+        g_engine.handle,
+        reinterpret_cast<const uint8_t*>(bytes.data()),
+        static_cast<int>(bytes.size()),
+        &result, &result_len, error, 512);
+    return FinishNativeResponse(code, result, result_len, error, "recognition");
+}
+
+std::vector<ppocr_roi> ParseRois(const json& body) {
+    const json& items = RequireField(body, "rois");
+    if (!items.is_array() || items.empty()) throw std::runtime_error("rois must be a non-empty array");
+#ifdef PPOCR_X86_LOW_MEMORY
+    const size_t max_rois = 64;
+#else
+    const size_t max_rois = 256;
+#endif
+    if (items.size() > max_rois) throw std::runtime_error("too many ROIs");
+
+    std::vector<ppocr_roi> rois;
+    rois.reserve(items.size());
+    for (size_t i = 0; i < items.size(); ++i) {
+        const json& item = items[i];
+        if (!item.is_object()) throw std::runtime_error("each ROI must be an object");
+        ppocr_roi roi;
+        ppocr_roi_init(&roi);
+        roi.id = OptionalInt(item, "id", static_cast<int>(i));
+        roi.rotation = OptionalInt(item, "rotation", 0);
+
+        const auto points_it = item.find("points");
+        if (points_it != item.end()) {
+            const json& points = *points_it;
+            if (!points.is_array() || points.size() != 4) {
+                throw std::runtime_error("ROI points must contain exactly four points");
+            }
+            int* coordinates[8] = {
+                &roi.x1, &roi.y1, &roi.x2, &roi.y2,
+                &roi.x3, &roi.y3, &roi.x4, &roi.y4
+            };
+            for (size_t p = 0; p < 4; ++p) {
+                *coordinates[p * 2] = RequireField(points[p], "x").get<int>();
+                *coordinates[p * 2 + 1] = RequireField(points[p], "y").get<int>();
+            }
+        }
+        else {
+            const json* rectangle = &item;
+            const auto rect_it = item.find("rect");
+            if (rect_it != item.end()) rectangle = &(*rect_it);
+            const int64_t x = RequireField(*rectangle, "x").get<int64_t>();
+            const int64_t y = RequireField(*rectangle, "y").get<int64_t>();
+            const int64_t width = RequireField(*rectangle, "width").get<int64_t>();
+            const int64_t height = RequireField(*rectangle, "height").get<int64_t>();
+            if (width <= 0 || height <= 0 || x < INT32_MIN || y < INT32_MIN ||
+                x + width - 1 > INT32_MAX || y + height - 1 > INT32_MAX) {
+                throw std::runtime_error("invalid ROI rectangle");
+            }
+            roi.x1 = roi.x4 = static_cast<int32_t>(x);
+            roi.x2 = roi.x3 = static_cast<int32_t>(x + width - 1);
+            roi.y1 = roi.y2 = static_cast<int32_t>(y);
+            roi.y3 = roi.y4 = static_cast<int32_t>(y + height - 1);
+        }
+        rois.push_back(roi);
+    }
+    return rois;
+}
+
+std::string RecognizeRoisJsonResponse(const httplib::Request& req) {
+    if (req.get_header_value("Content-Type").find("application/json") == std::string::npos) {
+        throw std::runtime_error("Content-Type must be application/json");
+    }
+    const json body = json::parse(req.body);
+    const std::string image_base64 = RequireField(body, "imageBase64").get<std::string>();
+    const std::string bytes = DecodeBase64Image(image_base64);
+    const std::vector<ppocr_roi> rois = ParseRois(body);
+
+    wchar_t error[512] = {};
+    char* result = nullptr;
+    int result_len = 0;
+    const int code = ppocr_recognize_rois_encoded(
+        g_engine.handle,
+        reinterpret_cast<const uint8_t*>(bytes.data()),
+        static_cast<int>(bytes.size()),
+        rois.data(), static_cast<int>(rois.size()),
+        &result, &result_len, error, 512);
+    return FinishNativeResponse(code, result, result_len, error, "ROI recognition");
+}
+
+void SetApiError(httplib::Response& res, const std::exception& error) {
+    json response;
+    response["code"] = -1;
+    response["msg"] = error.what();
+    response["elapsed_ms"] = 0;
+    response["results"] = json::array();
+    res.status = 400;
+    res.set_content(response.dump(), "application/json; charset=utf-8");
 }
 
 void BuildRoutes(httplib::Server& server, const AppConfig& cfg) {
@@ -562,20 +703,36 @@ void BuildRoutes(httplib::Server& server, const AppConfig& cfg) {
         res.set_content("{\"code\":0,\"msg\":\"ok\"}", "application/json; charset=utf-8");
     });
 
-    server.Post("/api/ocr", [](const httplib::Request& req, httplib::Response& res) {
-        try {
-            res.set_content(OcrJsonResponse(req), "application/json; charset=utf-8");
-        } catch (const std::exception& e) {
-            spdlog::error("OCR request failed: {}", e.what());
-            json response;
-            response["code"] = -1;
-            response["msg"] = e.what();
-            response["elapsed_ms"] = 0;
-            response["results"] = json::array();
-            res.status = 400;
-            res.set_content(response.dump(), "application/json; charset=utf-8");
-        }
-    });
+    if (cfg.mode != "rec") {
+        server.Post("/api/ocr", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                res.set_content(OcrJsonResponse(req), "application/json; charset=utf-8");
+            } catch (const std::exception& e) {
+                spdlog::error("OCR request failed: {}", e.what());
+                SetApiError(res, e);
+            }
+        });
+    }
+
+    if (cfg.mode != "ocr") {
+        server.Post("/api/recognize", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                res.set_content(RecognizeJsonResponse(req), "application/json; charset=utf-8");
+            } catch (const std::exception& e) {
+                spdlog::error("Recognition request failed: {}", e.what());
+                SetApiError(res, e);
+            }
+        });
+
+        server.Post("/api/recognize-rois", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                res.set_content(RecognizeRoisJsonResponse(req), "application/json; charset=utf-8");
+            } catch (const std::exception& e) {
+                spdlog::error("ROI recognition request failed: {}", e.what());
+                SetApiError(res, e);
+            }
+        });
+    }
 
     server.set_exception_handler([](const httplib::Request&, httplib::Response& res, std::exception_ptr ep) {
         try {
@@ -677,6 +834,7 @@ void PrintUsage() {
     std::cout << "Usage: lw.OpenCVDNN.PPOCR.HttpServer.exe [options]\n"
               << "  --port 8080\n"
               << "  --host 0.0.0.0\n"
+              << "  --mode both     ocr, rec or both\n"
               << "  --det_model inference/PP-OCRv6_tiny_det.onnx\n"
               << "  --rec_model inference/PP-OCRv6_tiny_rec.onnx\n"
               << "  --rec_dict inference/PP-OCRv6_tiny_rec_dict.txt\n"

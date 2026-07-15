@@ -1,7 +1,7 @@
 # lw.OpenCVDNN.PPOCR
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0.1-green.svg)](https://github.com/lxw112190/lw.OpenCVDNN.PPOCR/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0.0-green.svg)](https://github.com/lxw112190/lw.OpenCVDNN.PPOCR/releases)
 
 **14MB 纯 CPU OCR 动态库，支持 .NET Framework 3.5，解压即用，兼容 Windows 7。**
 
@@ -110,6 +110,11 @@ Windows 7 SP1 下运行的 .NET Framework 3.5 WinForms 测试与测速程序：
 
 ![Windows 7 SP1 下的 WinForms OCR 测试程序](images/screenshot-winforms-win7.png)
 
+WinForms 示例支持在图片上按住鼠标左键拖动，手动框选一个单行文字区域后点击
+**识别框选区域**；右键或点击**清除框选**可取消。框选坐标会按 `PictureBox.Zoom`
+的实际显示区域换算回原图像素，并通过 ROI 仅识别接口处理，不运行文字检测和方向分类。
+框选区域应尽量只包含一行方向正确的文字。
+
 ## 为支持 Win7，我们具体做了什么
 
 "支持 Win7"不是把工程里的目标系统改个名字就结束了。但凡有一处引入高版本依赖，程序就可能直接报错或闪退。
@@ -205,6 +210,46 @@ Content-Type: application/json
 
 {"imageBase64": "data:image/jpeg;base64,..."}
 ```
+
+服务还提供不运行检测和方向分类的识别接口：
+
+- `POST /api/recognize`：输入已经裁剪好的单行文字图片。
+- `POST /api/recognize-rois`：输入一张原图和多个固定 ROI，服务端只解码原图一次，完成透视裁剪后批量识别。
+
+ROI 可以使用普通矩形：
+
+```json
+{
+  "imageBase64": "...",
+  "rois": [
+    {"id": 101, "x": 120, "y": 80, "width": 160, "height": 45, "rotation": 0}
+  ]
+}
+```
+
+也可以使用四点坐标，顺序必须为左上、右上、右下、左下：
+
+```json
+{
+  "imageBase64": "...",
+  "rois": [
+    {
+      "id": 201,
+      "rotation": 0,
+      "points": [
+        {"x": 100, "y": 80}, {"x": 310, "y": 65},
+        {"x": 315, "y": 115}, {"x": 105, "y": 130}
+      ]
+    }
+  ]
+}
+```
+
+`rotation` 支持顺时针 `0`、`90`、`180`、`270`。ROI 坐标对应解码后原图像素，结果保持传入顺序并原样返回 `id` 和坐标。仅识别模式要求每个 ROI 是一个文字行；整张多行文档仍应使用 `/api/ocr`。
+
+原生 C ABI 对应提供 `ppocr_recognize_encoded`、`ppocr_recognize_bgr`、
+`ppocr_recognize_encoded_batch`、`ppocr_recognize_rois_encoded` 和
+`ppocr_recognize_rois_bgr`。只加载识别模型时可将 `det_model_path` 设为 `nullptr`。
 
 ### curl 调用
 
@@ -465,6 +510,7 @@ lw.OpenCVDNN.PPOCR/
 | --- | --- | --- |
 | `--host` | `0.0.0.0` | 绑定地址 |
 | `--port` | `8080` | 监听端口 |
+| `--mode` | `both` | `ocr`、`rec` 或 `both`；`rec` 不加载检测/分类模型 |
 | `--det_model` | `inference/PP-OCRv6_tiny_det.onnx` | 检测模型路径 |
 | `--rec_model` | `inference/PP-OCRv6_tiny_rec.onnx` | 识别模型路径 |
 | `--rec_dict` | `inference/PP-OCRv6_tiny_rec_dict.txt` | 识别字典路径 |

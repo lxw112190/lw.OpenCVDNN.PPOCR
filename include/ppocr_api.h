@@ -20,7 +20,31 @@ extern "C" {
 
 typedef void* ppocr_handle;
 
-/* UTF-16 configuration for Windows callers. Initialize it with ppocr_config_init. */
+/*
+ * A quadrilateral text region in decoded-image pixel coordinates.
+ * Points must be ordered: top-left, top-right, bottom-right, bottom-left.
+ * rotation is applied clockwise after perspective cropping and must be
+ * one of 0, 90, 180 or 270.
+ */
+typedef struct ppocr_roi {
+    int32_t struct_size;
+    int32_t id;
+    int32_t x1;
+    int32_t y1;
+    int32_t x2;
+    int32_t y2;
+    int32_t x3;
+    int32_t y3;
+    int32_t x4;
+    int32_t y4;
+    int32_t rotation;
+} ppocr_roi;
+
+/*
+ * UTF-16 configuration for Windows callers. Initialize it with ppocr_config_init.
+ * det_model_path may be null for recognition-only handles. rec_model_path and
+ * rec_dict_path must either both be provided or both be null.
+ */
 typedef struct ppocr_config_w {
     int32_t struct_size;
     const wchar_t* det_model_path;
@@ -46,6 +70,7 @@ typedef struct ppocr_config_w {
 } ppocr_config_w;
 
 PPOCR_API void PPOCR_CALL ppocr_config_init(ppocr_config_w* config);
+PPOCR_API void PPOCR_CALL ppocr_roi_init(ppocr_roi* roi);
 
 PPOCR_API int32_t PPOCR_CALL ppocr_create_w(
     const wchar_t* det_model_path,
@@ -78,6 +103,68 @@ PPOCR_API int32_t PPOCR_CALL ppocr_ocr_bgr(
     int32_t height,
     int32_t channels,
     int32_t stride,
+    char** utf8_json,
+    int32_t* json_size,
+    wchar_t* error_message,
+    int32_t error_capacity);
+
+/* Recognize one already-cropped text-line image without detection/classification. */
+PPOCR_API int32_t PPOCR_CALL ppocr_recognize_encoded(
+    ppocr_handle handle,
+    const uint8_t* encoded_image,
+    int32_t encoded_size,
+    char** utf8_json,
+    int32_t* json_size,
+    wchar_t* error_message,
+    int32_t error_capacity);
+
+PPOCR_API int32_t PPOCR_CALL ppocr_recognize_bgr(
+    ppocr_handle handle,
+    const uint8_t* pixels,
+    int32_t width,
+    int32_t height,
+    int32_t channels,
+    int32_t stride,
+    char** utf8_json,
+    int32_t* json_size,
+    wchar_t* error_message,
+    int32_t error_capacity);
+
+/*
+ * Recognize multiple encoded, already-cropped text-line images in input order.
+ * encoded_images and encoded_sizes must both contain image_count entries.
+ */
+PPOCR_API int32_t PPOCR_CALL ppocr_recognize_encoded_batch(
+    ppocr_handle handle,
+    const uint8_t* const* encoded_images,
+    const int32_t* encoded_sizes,
+    int32_t image_count,
+    char** utf8_json,
+    int32_t* json_size,
+    wchar_t* error_message,
+    int32_t error_capacity);
+
+/* Decode/copy the source image once, crop all ROIs, then recognize in a batch. */
+PPOCR_API int32_t PPOCR_CALL ppocr_recognize_rois_encoded(
+    ppocr_handle handle,
+    const uint8_t* encoded_image,
+    int32_t encoded_size,
+    const ppocr_roi* rois,
+    int32_t roi_count,
+    char** utf8_json,
+    int32_t* json_size,
+    wchar_t* error_message,
+    int32_t error_capacity);
+
+PPOCR_API int32_t PPOCR_CALL ppocr_recognize_rois_bgr(
+    ppocr_handle handle,
+    const uint8_t* pixels,
+    int32_t width,
+    int32_t height,
+    int32_t channels,
+    int32_t stride,
+    const ppocr_roi* rois,
+    int32_t roi_count,
     char** utf8_json,
     int32_t* json_size,
     wchar_t* error_message,

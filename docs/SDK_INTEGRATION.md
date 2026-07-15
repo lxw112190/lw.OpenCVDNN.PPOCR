@@ -9,7 +9,7 @@
 - `native/ppocr_api.h`：稳定的 C ABI 头文件，可供 C、C++、C#、Python、Delphi、Java/JNA 等调用。
 - `csharp/NativeOcr.cs`：兼容 .NET Framework 3.5 的 P/Invoke 参考封装。
 
-DLL 版本：`1.0.0.1`。作者：天天代码码天天，QQ：819069052。
+DLL 版本：`1.1.0.0`。作者：天天代码码天天，QQ：819069052。
 
 ## 部署要求
 
@@ -70,9 +70,46 @@ ppocr_destroy(engine);
 }
 ```
 
+## 仅识别与 ROI 识别
+
+如果输入已经是裁剪好的单行文字图片，初始化时可省略检测模型：
+
+```cpp
+ppocr_config_w config{};
+ppocr_config_init(&config);
+config.det_model_path = nullptr;
+config.rec_model_path = L"inference/PP-OCRv6_tiny_rec.onnx";
+config.rec_dict_path = L"inference/PP-OCRv6_tiny_rec_dict.txt";
+```
+
+使用 `ppocr_recognize_encoded` 识别单张裁剪图，或使用
+`ppocr_recognize_encoded_batch` 批量识别。若调用方拥有原图中的固定区域，
+可以传入左上、右上、右下、左下四点：
+
+```cpp
+ppocr_roi roi{};
+ppocr_roi_init(&roi);
+roi.id = 101;
+roi.x1 = 120; roi.y1 = 80;
+roi.x2 = 279; roi.y2 = 80;
+roi.x3 = 279; roi.y3 = 124;
+roi.x4 = 120; roi.y4 = 124;
+roi.rotation = 0;
+
+char* json = nullptr;
+int32_t json_size = 0;
+ppocr_recognize_rois_encoded(engine, encoded_data, encoded_size,
+    &roi, 1, &json, &json_size, error, 512);
+ppocr_free(json);
+```
+
+`rotation` 允许顺时针 `0/90/180/270`。坐标必须位于解码后的原图范围内。
+多个 ROI 会批量推理并保持输入顺序；单个无效 ROI 在对应结果中返回局部错误，
+不会影响其他有效区域。
+
 ## C# 使用
 
-将 `sdk/csharp/NativeOcr.cs` 加入 x64 的 .NET Framework 项目，构造 `PPOCRConfig` 后使用 `using (NativeOcr engine = new NativeOcr(config))` 调用 `Recognize(File.ReadAllBytes(imagePath))`。该封装已处理数组固定、UTF-8 JSON、原生返回内存释放和句柄释放。
+将 `sdk/csharp/NativeOcr.cs` 加入 x64 的 .NET Framework 项目，构造 `PPOCRConfig` 后使用 `using (NativeOcr engine = new NativeOcr(config))` 调用 `Recognize(File.ReadAllBytes(imagePath))`。仅识别和 ROI 场景分别调用 `RecognizeTextLine`、`RecognizeRegions`。该封装已处理数组固定、UTF-8 JSON、原生返回内存释放和句柄释放。
 
 ## 错误码
 

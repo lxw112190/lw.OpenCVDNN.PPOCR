@@ -1,6 +1,6 @@
 # 绿色部署说明
 
-版本：1.0.0.1  
+版本：1.1.0.0
 作者：天天代码码天天,QQ:819069052
 
 ## 文件
@@ -54,4 +54,3 @@ deploy/uninstall_service.bat
 - 支持SSE2的x64 CPU
 
 不需要安装 OpenCV、OpenCvSharp、VC++运行库或其他NuGet组件。
-

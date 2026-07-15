@@ -94,6 +94,7 @@ authenticated HTTPS reverse proxy when exposing it beyond a trusted LAN.
 | --- | --- | --- |
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `8080` | Listen port |
+| `--mode` | `both` | `ocr`, `rec`, or `both`; `rec` loads only recognition assets |
 | `--det_model` | `inference/PP-OCRv6_tiny_det.onnx` | Detection model |
 | `--rec_model` | `inference/PP-OCRv6_tiny_rec.onnx` | Recognition model |
 | `--rec_dict` | `inference/PP-OCRv6_tiny_rec_dict.txt` | Recognition dictionary |
@@ -110,12 +111,49 @@ authenticated HTTPS reverse proxy when exposing it beyond a trusted LAN.
 
 ### API
 
+Full OCR (detection and recognition):
+
 ```http
 POST /api/ocr
 Content-Type: application/json
 
 {"imageBase64": "data:image/jpeg;base64,..."}
 ```
+
+Recognition of one already-cropped text line:
+
+```http
+POST /api/recognize
+Content-Type: application/json
+
+{"imageBase64": "data:image/jpeg;base64,..."}
+```
+
+Recognition of fixed regions without detection/classification:
+
+```http
+POST /api/recognize-rois
+Content-Type: application/json
+
+{
+  "imageBase64": "...",
+  "rois": [
+    {"id": 1, "x": 100, "y": 80, "width": 240, "height": 48, "rotation": 0},
+    {
+      "id": 2,
+      "points": [
+        {"x": 100, "y": 150}, {"x": 340, "y": 140},
+        {"x": 345, "y": 190}, {"x": 105, "y": 200}
+      ],
+      "rotation": 0
+    }
+  ]
+}
+```
+
+Quadrilateral points are ordered top-left, top-right, bottom-right,
+bottom-left. Coordinates refer to decoded source-image pixels. Use
+`--mode rec` for a recognition-only deployment that does not load the detector.
 
 ```http
 GET /health
